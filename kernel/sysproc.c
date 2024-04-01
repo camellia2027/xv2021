@@ -6,6 +6,9 @@
 #include "spinlock.h"
 #include "proc.h"
 
+
+
+
 uint64
 sys_exit(void)
 {
@@ -71,10 +74,57 @@ sys_sleep(void)
 
 
 #ifdef LAB_PGTBL
+// kernel/sysproc.c
+ int vm_pgaccess(pagetable_t pagetable, uint64 va)
+{
+  pte_t *pte;
+ 
+  if(va >= MAXVA)
+    return 0;
+  // walk()为实验指导书中提供的函数，可以返回当前页面的pte
+  pte = walk(pagetable, va, 0);
+  if (pte == 0) {
+    return 0;
+  }
+  
+  if ((*pte & PTE_A) != 0) {
+    // 如果当前页面被访问过则将PTE_A复位
+    *pte = *pte & (~PTE_A);
+    return 1;
+  }
+  return 0;
+}
 int
 sys_pgaccess(void)
 {
-  // lab pgtbl: your code here.
+    uint64 addr;
+  int len;
+  uint64 bitmask;
+  // 接收用户空间传进来的参数
+  argaddr(0, &addr);
+  argint(1, &len);
+  argaddr(2, &bitmask);
+  // 防止给的参数页表长度过大或过小
+  if (len > 32 || len < 0) {
+    return -1;
+  }
+ 
+  // 存储访问结果，以掩码表示
+  int count = 0;
+  struct proc *p = myproc();
+  for (int i = 0; i < len; ++i) {
+    // 获取下一页的地址
+    int va = addr + i*PGSIZE;
+    // 查看该页面是否被访问
+    int abit = vm_pgaccess(p->pagetable, va);
+    // 修改结果
+    count = count | abit << i;
+  }
+  
+  // 将值复制给bitmask，返回给用户空间
+  if (copyout(p->pagetable, bitmask, (char*)&count, sizeof count) < 0) {
+    return -1;
+  }
   return 0;
 }
 #endif
